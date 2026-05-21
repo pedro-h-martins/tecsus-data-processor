@@ -8,7 +8,7 @@ const sql = postgres({
   database: process.env.PG_DB!,
   username: process.env.PG_USER!,
   password: process.env.PG_PASSWORD!,
-  ssl: { rejectUnauthorized: false }, // RDS usa SSL
+  ssl: false,
   max: 10,
 });
 
