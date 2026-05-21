@@ -1,0 +1,22 @@
+{
+  "name": "servidor-b",
+  "version": "1.0.0",
+  "description": "Sync MongoDB → Supabase (Tecsus)",
+  "main": "dist/sync-mongo-postgre.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/sync-mongo-postgre.js",
+    "dev": "ts-node src/sync-mongo-postgre.ts"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.39.3",
+    "luxon": "^3.4.4",
+    "mongodb": "^6.3.0"
+  },
+  "devDependencies": {
+    "@types/luxon": "^3.4.2",
+    "@types/node": "^20.11.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.3.3"
+  }
+}
