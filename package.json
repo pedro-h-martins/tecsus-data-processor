@@ -1,7 +1,7 @@
 {
-  "name": "servidor-b",
+  "name": "tecsus-data-processor",
   "version": "1.0.0",
-  "description": "Sync MongoDB → Supabase (Tecsus)",
+  "description": "Sync MongoDB → RDS PostgreSQL (Tecsus)",
   "main": "dist/sync-mongo-postgre.js",
   "scripts": {
     "build": "tsc",
@@ -9,9 +9,9 @@
     "dev": "ts-node src/sync-mongo-postgre.ts"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.39.3",
     "luxon": "^3.4.4",
-    "mongodb": "^6.3.0"
+    "mongodb": "^6.3.0",
+    "postgres": "^3.4.4"
   },
   "devDependencies": {
     "@types/luxon": "^3.4.2",

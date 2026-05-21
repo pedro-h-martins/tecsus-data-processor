@@ -1,18 +1,16 @@
-import { createClient } from "@supabase/supabase-js";
+import postgres from "postgres";
 import { DateTime } from "luxon";
 import { MongoClient } from "mongodb";
 
-// Supabase admin (service role) — inicializado diretamente sem alias Next.js
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-  {
-    global: {
-      fetch: (url, options = {}) =>
-        fetch(url, { ...options, keepalive: false }),
-    },
-  },
-);
+const sql = postgres({
+  host: process.env.PG_HOST!,
+  port: 5432,
+  database: process.env.PG_DB!,
+  username: process.env.PG_USER!,
+  password: process.env.PG_PASSWORD!,
+  ssl: { rejectUnauthorized: false }, // RDS usa SSL
+  max: 10,
+});
 
 const BATCH_SIZE = parseInt(process.env.BATCH_SIZE ?? "100");
 const SLEEP_SECONDS = parseInt(process.env.SLEEP_SECONDS ?? "60");
@@ -25,7 +23,6 @@ const MONGO_COLLECTION = process.env.MONGODB_COLLECTION_NAME || "raw_payloads";
 
 let mongoClient: MongoClient | null = null;
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function getCollection(): Promise<any> {
   if (!mongoClient) {
     mongoClient = new MongoClient(MONGO_URI);
@@ -45,30 +42,17 @@ function parameterCacheKey(stationId: number, parameterTypeId: number): string {
 }
 
 async function loadCaches(): Promise<void> {
-  console.log("[Cache] Carregando caches do Supabase...");
+  console.log("[Cache] Carregando caches do RDS...");
 
-  const { data: stations } = await supabaseAdmin
-    .from("stations")
-    .select("id,id_datalogger");
-  stationCache = Object.fromEntries(
-    (stations ?? []).map((s) => [s.id_datalogger, s.id]),
-  );
+  const stations = await sql`SELECT id, id_datalogger FROM stations`;
+  stationCache = Object.fromEntries(stations.map((s) => [s.id_datalogger, s.id]));
 
-  const { data: parameterTypes } = await supabaseAdmin
-    .from("parameter_types")
-    .select("id,json_name");
-  parameterTypeCache = Object.fromEntries(
-    (parameterTypes ?? []).map((pt) => [pt.json_name, pt.id]),
-  );
+  const parameterTypes = await sql`SELECT id, json_name FROM parameter_types`;
+  parameterTypeCache = Object.fromEntries(parameterTypes.map((pt) => [pt.json_name, pt.id]));
 
-  const { data: parameters } = await supabaseAdmin
-    .from("parameters")
-    .select("id,id_station,id_parameter_type");
+  const parameters = await sql`SELECT id, id_station, id_parameter_type FROM parameters`;
   parameterCache = Object.fromEntries(
-    (parameters ?? []).map((p) => [
-      parameterCacheKey(p.id_station, p.id_parameter_type),
-      p.id,
-    ]),
+    parameters.map((p) => [parameterCacheKey(p.id_station, p.id_parameter_type), p.id])
   );
 
   lastCacheReload = Date.now();
@@ -76,57 +60,46 @@ async function loadCaches(): Promise<void> {
 }
 
 async function reloadCachesIfNeeded(): Promise<void> {
-  if (
-    Date.now() - lastCacheReload >= CACHE_RELOAD_INTERVAL &&
-    CACHE_RELOAD_INTERVAL > 0
-  ) {
+  if (Date.now() - lastCacheReload >= CACHE_RELOAD_INTERVAL && CACHE_RELOAD_INTERVAL > 0) {
     await loadCaches();
   }
 }
 
 async function refreshStationCache(uid: string): Promise<number | null> {
-  const { data } = await supabaseAdmin
-    .from("stations")
-    .select("id,id_datalogger")
-    .eq("id_datalogger", uid)
-    .single();
-
-  if (data) {
-    stationCache[data.id_datalogger] = data.id;
-    return data.id;
+  const rows = await sql`
+    SELECT id, id_datalogger FROM stations WHERE id_datalogger = ${uid} LIMIT 1
+  `;
+  if (rows.length > 0) {
+    stationCache[rows[0].id_datalogger] = rows[0].id;
+    return rows[0].id;
   }
   return null;
 }
 
 async function refreshParameterTypeCache(jsonName: string): Promise<number | null> {
-  const { data } = await supabaseAdmin
-    .from("parameter_types")
-    .select("id,json_name")
-    .eq("json_name", jsonName)
-    .single();
-
-  if (data) {
-    parameterTypeCache[data.json_name] = data.id;
-    return data.id;
+  const rows = await sql`
+    SELECT id, json_name FROM parameter_types WHERE json_name = ${jsonName} LIMIT 1
+  `;
+  if (rows.length > 0) {
+    parameterTypeCache[rows[0].json_name] = rows[0].id;
+    return rows[0].id;
   }
   return null;
 }
 
 async function refreshParameterCache(
   stationId: number,
-  parameterTypeId: number,
+  parameterTypeId: number
 ): Promise<number | null> {
-  const { data } = await supabaseAdmin
-    .from("parameters")
-    .select("id,id_station,id_parameter_type")
-    .eq("id_station", stationId)
-    .eq("id_parameter_type", parameterTypeId)
-    .single();
-
-  if (data) {
-    const key = parameterCacheKey(data.id_station, data.id_parameter_type);
-    parameterCache[key] = data.id;
-    return data.id;
+  const rows = await sql`
+    SELECT id, id_station, id_parameter_type FROM parameters
+    WHERE id_station = ${stationId} AND id_parameter_type = ${parameterTypeId}
+    LIMIT 1
+  `;
+  if (rows.length > 0) {
+    const key = parameterCacheKey(rows[0].id_station, rows[0].id_parameter_type);
+    parameterCache[key] = rows[0].id;
+    return rows[0].id;
   }
   return null;
 }
@@ -162,11 +135,7 @@ async function processBatch(): Promise<number> {
         zone: "America/Sao_Paulo",
       }).toISO();
 
-      const measurements: {
-        id_parameter: number;
-        value: unknown;
-        date_time: string;
-      }[] = [];
+      const measurements: { id_parameter: number; value: number; date_time: string }[] = [];
 
       for (const [key, value] of Object.entries(payload)) {
         if (["_id", "uid", "unixtime"].includes(key)) continue;
@@ -177,15 +146,10 @@ async function processBatch(): Promise<number> {
 
         const cacheKey = parameterCacheKey(stationId, parameterTypeId);
         const parameterId =
-          parameterCache[cacheKey] ??
-          (await refreshParameterCache(stationId, parameterTypeId));
+          parameterCache[cacheKey] ?? (await refreshParameterCache(stationId, parameterTypeId));
         if (!parameterId) continue;
 
-        measurements.push({
-          id_parameter: parameterId,
-          value,
-          date_time: dateTime!,
-        });
+        measurements.push({ id_parameter: parameterId, value: Number(value), date_time: dateTime! });
       }
 
       if (measurements.length === 0) {
@@ -193,16 +157,14 @@ async function processBatch(): Promise<number> {
         continue;
       }
 
-      const { error } = await supabaseAdmin
-        .from("measurements")
-        .upsert(measurements, { onConflict: "id_parameter,date_time" });
+      // Upsert em batch com postgres.js
+      await sql`
+        INSERT INTO measurements ${sql(measurements, "id_parameter", "value", "date_time")}
+        ON CONFLICT (id_parameter, date_time) DO UPDATE
+          SET value = EXCLUDED.value
+      `;
 
-      if (error) {
-        console.error("[Supabase] Erro no upsert:", error.message);
-        continue;
-      } else {
-        idsToDelete.push(docId);
-      }
+      idsToDelete.push(docId);
     } catch (err) {
       console.error("[Sync] Erro inesperado no documento:", err);
       continue;
@@ -228,7 +190,7 @@ async function sleepWithCountdown(seconds: number): Promise<void> {
 }
 
 export async function main(): Promise<void> {
-  console.log("[Servidor B] Iniciando sync MongoDB → Supabase...");
+  console.log("[Servidor B] Iniciando sync MongoDB → RDS PostgreSQL...");
   await loadCaches();
 
   while (true) {
@@ -239,9 +201,7 @@ export async function main(): Promise<void> {
       while (true) {
         const count = await processBatch();
         totalProcessed += count;
-
         if (count < BATCH_SIZE) break;
-
         await sleep(200);
       }
 
