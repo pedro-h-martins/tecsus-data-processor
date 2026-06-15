@@ -5,6 +5,7 @@
   "main": "dist/sync-mongo-postgre.js",
   "scripts": {
     "build": "tsc",
+    "lint": "eslint .",
     "start": "node dist/sync-mongo-postgre.js",
     "dev": "ts-node src/sync-mongo-postgre.ts"
   },
@@ -14,9 +15,12 @@
     "postgres": "^3.4.4"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@types/luxon": "^3.4.2",
     "@types/node": "^20.11.0",
+    "eslint": "^10.5.0",
     "ts-node": "^10.9.2",
-    "typescript": "^5.3.3"
+    "typescript": "^5.3.3",
+    "typescript-eslint": "^8.61.1"
   }
 }

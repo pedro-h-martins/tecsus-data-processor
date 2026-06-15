@@ -1,6 +1,6 @@
 import postgres from "postgres";
 import { DateTime } from "luxon";
-import { MongoClient } from "mongodb";
+import { Collection, MongoClient, ObjectId } from "mongodb";
 
 const sql = postgres({
   host: process.env.PG_HOST!,
@@ -23,7 +23,7 @@ const MONGO_COLLECTION = process.env.MONGODB_COLLECTION_NAME || "raw_payloads";
 
 let mongoClient: MongoClient | null = null;
 
-async function getCollection(): Promise<any> {
+async function getCollection(): Promise<Collection> {
   if (!mongoClient) {
     mongoClient = new MongoClient(MONGO_URI, {
       serverSelectionTimeoutMS: 5000,
@@ -130,7 +130,7 @@ async function processBatch(): Promise<number> {
   const documents = await collection.find().limit(BATCH_SIZE).toArray();
 
   let totalDocs = 0;
-  const idsToDelete: object[] = [];
+  const idsToDelete: ObjectId[] = [];
 
   for (const doc of documents) {
     totalDocs++;

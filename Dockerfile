@@ -2,13 +2,15 @@ FROM node:22-alpine
 
 WORKDIR /app
 
-COPY package*.json ./
-RUN npm install --production=false
+RUN corepack enable && corepack prepare pnpm@latest --activate
 
-COPY tsconfig.json ./
+COPY package.json pnpm-lock.yaml ./
+RUN pnpm install --frozen-lockfile
+
+COPY tsconfig.json eslint.config.mjs ./
 COPY src/ ./src/
 
-RUN npm run build
+RUN pnpm build
 
 ENV NODE_ENV=production
 
