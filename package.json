@@ -1,6 +1,7 @@
 {
   "name": "tecsus-data-processor",
   "version": "1.0.0",
+  "packageManager": "pnpm@10.32.1",
   "description": "Sync MongoDB → RDS PostgreSQL (Tecsus)",
   "main": "dist/sync-mongo-postgre.js",
   "scripts": {
